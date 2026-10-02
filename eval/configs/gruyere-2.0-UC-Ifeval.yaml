@@ -1,0 +1,20 @@
+model: hf
+model_args:
+  pretrained: ./runs/gruyere-2.0/r2/final
+  trust_remote_code: true
+  dtype: bfloat16
+
+log_samples: true
+
+tasks:
+  - ifeval
+
+apply_chat_template: true
+
+gen_kwargs:
+  do_sample: false
+
+device: cuda:0
+batch_size: 2
+
+output_path: ./eval/results/gruyere-2.0-UC-r5

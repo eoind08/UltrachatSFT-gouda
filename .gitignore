@@ -1,2 +1,4 @@
 data/
 models/
+runs/
+eval/results
