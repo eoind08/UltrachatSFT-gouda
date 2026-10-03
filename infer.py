@@ -6,7 +6,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 # Config
 # ---------------------------------------------------------------------------
 
-HF_MODEL = "runs/gruyere-2.0/r2/final"
+HF_MODEL = "runs/gouda-2.0/r2/final"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DTYPE = torch.bfloat16 if DEVICE == "cuda" else torch.float32
@@ -23,12 +23,12 @@ CONTEXT_LENGTH = 2048
 
 MAX_NEW_TOKENS = 256
 
-TEMPERATURE = 0.40
-TOP_K = 20
+TEMPERATURE = 0.6
+TOP_K = 30
 TOP_P = 0.90
 
-REPETITION_PENALTY = 1.10
-FREQUENCY_PENALTY = 0.05
+REPETITION_PENALTY = 1.12
+FREQUENCY_PENALTY = 0.1
 PRESENCE_PENALTY = 0.00
 
 DISPLAY_TOP_N = 20
