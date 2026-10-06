@@ -243,11 +243,11 @@ def main():
 
     parser.add_argument("--epochs", type=float, default=0.25)
     parser.add_argument("--T", type=int, default=2048)
-    parser.add_argument("--B", type=int, default=2)
+    parser.add_argument("--B", type=int, default=8)
     parser.add_argument("--batch_tokens", type=int, default=131072)
 
-    parser.add_argument("--muon_lr", type=float, default=1e-3)
-    parser.add_argument("--adamw_lr", type=float, default=3e-5)
+    parser.add_argument("--muon_lr", type=float, default=0.5e-3)
+    parser.add_argument("--adamw_lr", type=float, default=1.5e-5)
     parser.add_argument("--weight_decay", type=float, default=0.01)
 
     parser.add_argument("--warmup_fraction", type=float, default=0.03)
