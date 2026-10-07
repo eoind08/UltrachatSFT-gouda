@@ -243,7 +243,7 @@ def main():
 
     parser.add_argument("--epochs", type=float, default=0.25)
     parser.add_argument("--T", type=int, default=2048)
-    parser.add_argument("--B", type=int, default=8)
+    parser.add_argument("--B", type=int, default=1)
     parser.add_argument("--batch_tokens", type=int, default=131072)
 
     parser.add_argument("--muon_lr", type=float, default=0.5e-3)
@@ -370,6 +370,7 @@ def main():
         muon.zero_grad(set_to_none=True)
 
         loss_accum = torch.zeros((), device=device)
+        completed_micro_steps = 0
 
         for micro_step in range(grad_accum_steps):
             x, labels = train_loader.next_batch()
@@ -380,10 +381,7 @@ def main():
             valid_labels = (labels != -100).sum().item()
 
             if valid_labels == 0:
-                raise RuntimeError(
-                    f"No supervised tokens at step {step + 1}, "
-                    f"micro-step {micro_step + 1}"
-                )
+                continue
 
             with torch.autocast(
                 device_type="cuda",
@@ -411,6 +409,7 @@ def main():
 
             loss_accum += loss.detach()
             loss.backward()
+            completed_micro_steps += 1
 
         norm = torch.nn.utils.clip_grad_norm_(
             raw_model.parameters(),
@@ -469,6 +468,7 @@ def main():
             f"shard {train_loader.current_shard:4d} | "
             f"shard_progress {shard_progress * 100:6.2f}% | "
             f"tokens {cumulative_tokens / 1e9:8.4f}B | "
+            f"micro {completed_micro_steps}/{grad_accum_steps} | "
             f"loss {loss_accum.item():.6f} | "
             f"lr {adamw_lr:.4e} | "
             f"muon_lr {muon_lr:.4e} | "
