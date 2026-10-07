@@ -58,29 +58,16 @@ class ShardLoader:
         while self.pos + n > len(self.tokens):
             self._advance()
 
-        tok = np.asarray(
-            self.tokens[self.pos:self.pos + n],
-            dtype=np.int64,
-        ).copy()
-
-        mask = np.asarray(
-            self.mask[self.pos:self.pos + n],
-            dtype=np.bool_,
-        ).copy()
+        tok = np.asarray(self.tokens[self.pos:self.pos + n], dtype=np.int64,).copy()
+        mask = np.asarray(self.mask[self.pos:self.pos + n], dtype=np.bool_,).copy()
 
         self.pos += n
-
         x = torch.from_numpy(tok).view(self.B, self.T)
         m = torch.from_numpy(mask).view(self.B, self.T)
 
         # HF CausalLM convention: labels are aligned with input_ids.
         # RicottaForCausalLM performs the causal shift internally.
-        labels = torch.where(
-            m,
-            x,
-            torch.full_like(x, -100),
-        )
-
+        labels = torch.where(m, x, torch.full_like(x, -100),)
         return x, labels
 
     def reset(self):
@@ -93,10 +80,7 @@ class ShardLoader:
     @property
     def total_tokens(self):
         if self._total_tokens is None:
-            self._total_tokens = sum(
-                np.load(path, mmap_mode="r").shape[0]
-                for path in self.token_paths
-            )
+            self._total_tokens = sum(np.load(path, mmap_mode="r").shape[0] for path in self.token_paths)
         return self._total_tokens
 
     @property
@@ -121,19 +105,12 @@ def get_lr(step, max_steps, max_lr, warmup_fraction, decay_fraction, min_lr_rati
 
     ratio = (step - decay_start) / max(1, decay_steps - 1)
     ratio = min(max(ratio, 0.0), 1.0)
-
     coeff = 0.5 * (1.0 + math.cos(math.pi * ratio))
     return max_lr * (min_lr_ratio + (1.0 - min_lr_ratio) * coeff)
 
 
 def make_optimizers(model, muon_lr, adamw_lr, weight_decay):
-    muon_suffixes = (
-        "attn.qkv_proj.weight",
-        "attn.o_proj.weight",
-        "mlp.gate_up_proj.weight",
-        "mlp.down_proj.weight",
-    )
-
+    muon_suffixes = ("attn.qkv_proj.weight", "attn.o_proj.weight", "mlp.gate_up_proj.weight", "mlp.down_proj.weight",)
     muon_params = []
     adamw_params = []
 
@@ -152,28 +129,10 @@ def make_optimizers(model, muon_lr, adamw_lr, weight_decay):
             "Use the same modern PyTorch environment as Gouda Core v2 pretraining."
         )
 
-    muon = torch.optim.Muon(
-        muon_params,
-        lr=muon_lr,
-        momentum=0.95,
-        weight_decay=weight_decay,
-        nesterov=True,
-        ns_steps=5,
-        adjust_lr_fn="match_rms_adamw",
-    )
-
-    adamw = torch.optim.AdamW(
-        adamw_params,
-        lr=adamw_lr,
-        betas=(0.9, 0.95),
-        eps=1e-8,
-        weight_decay=weight_decay,
-        fused=torch.cuda.is_available(),
-    )
-
+    muon = torch.optim.Muon(muon_params, lr=muon_lr, momentum=0.95, weight_decay=weight_decay, nesterov=True, ns_steps=5, adjust_lr_fn="match_rms_adamw",)
+    adamw = torch.optim.AdamW(adamw_params, lr=adamw_lr, betas=(0.9, 0.95), eps=1e-8, weight_decay=weight_decay, fused=torch.cuda.is_available(),)
     print(f"Muon parameters:  {sum(p.numel() for p in muon_params):,}")
     print(f"AdamW parameters: {sum(p.numel() for p in adamw_params):,}")
-
     return muon, adamw
 
 
@@ -183,7 +142,6 @@ def validate(model, loader, steps, device):
     loader.reset()
 
     total_loss = 0.0
-
     for _ in range(steps):
         x, labels = loader.next_batch()
 
@@ -209,11 +167,7 @@ def validate(model, loader, steps, device):
 def save_checkpoint(model, tokenizer, output_dir, source_model, step, cumulative_tokens):
     os.makedirs(output_dir, exist_ok=True)
 
-    model.save_pretrained(
-        output_dir,
-        safe_serialization=True,
-    )
-
+    model.save_pretrained(output_dir, safe_serialization=True,)
     tokenizer.save_pretrained(output_dir)
 
     for filename in ("modeling_gruyere.py", "configuration_gruyere.py"):
@@ -223,15 +177,8 @@ def save_checkpoint(model, tokenizer, output_dir, source_model, step, cumulative
         if os.path.exists(src):
             shutil.copy2(src, dst)
 
-    state = {
-        "step": step,
-        "cumulative_tokens": cumulative_tokens,
-    }
-
-    torch.save(
-        state,
-        os.path.join(output_dir, "trainer_state.pt"),
-    )
+    state = {"step": step, "cumulative_tokens": cumulative_tokens,}
+    torch.save(state, os.path.join(output_dir, "trainer_state.pt"),)
 
 
 def main():
@@ -240,29 +187,22 @@ def main():
     parser.add_argument("--model", default="models/ricotta-2.0-PRETRAINED")
     parser.add_argument("--data", default="data/ultrachat")
     parser.add_argument("--out", default="runs/ricotta-2.0/r2")
-
     parser.add_argument("--epochs", type=float, default=0.25)
     parser.add_argument("--T", type=int, default=2048)
     parser.add_argument("--B", type=int, default=1)
     parser.add_argument("--batch_tokens", type=int, default=131072)
-
     parser.add_argument("--muon_lr", type=float, default=0.5e-3)
     parser.add_argument("--adamw_lr", type=float, default=1.5e-5)
     parser.add_argument("--weight_decay", type=float, default=0.01)
-
     parser.add_argument("--warmup_fraction", type=float, default=0.03)
     parser.add_argument("--decay_fraction", type=float, default=0.20)
     parser.add_argument("--min_lr_ratio", type=float, default=0.05)
-
     parser.add_argument("--grad_clip", type=float, default=1.0)
-
     parser.add_argument("--val_every", type=int, default=150)
     parser.add_argument("--val_steps", type=int, default=20)
     parser.add_argument("--save_every", type=int, default=500)
-
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--no_compile", action="store_true")
-
     args = parser.parse_args()
 
     if not torch.cuda.is_available():
@@ -272,11 +212,8 @@ def main():
     torch.cuda.manual_seed(args.seed)
     random.seed(args.seed)
     np.random.seed(args.seed)
-
     torch.set_float32_matmul_precision("high")
-
     device = "cuda"
-
     micro_batch_tokens = args.B * args.T
 
     if args.batch_tokens % micro_batch_tokens != 0:
@@ -287,24 +224,8 @@ def main():
 
     grad_accum_steps = args.batch_tokens // micro_batch_tokens
 
-    train_loader = ShardLoader(
-        args.data,
-        "train",
-        args.B,
-        args.T,
-        shuffle=True,
-        seed=args.seed,
-    )
-
-    val_loader = ShardLoader(
-        args.data,
-        "val",
-        args.B,
-        args.T,
-        shuffle=False,
-        seed=args.seed,
-    )
-
+    train_loader = ShardLoader(args.data, "train", args.B, args.T, shuffle=True, seed=args.seed,)
+    val_loader = ShardLoader(args.data, "val", args.B, args.T, shuffle=False, seed=args.seed,)
     target_tokens = int(train_loader.total_tokens * args.epochs)
     max_steps = math.ceil(target_tokens / args.batch_tokens)
 
@@ -315,31 +236,13 @@ def main():
     print(f"gradient accumulation: {grad_accum_steps}")
     print(f"effective batch: {args.batch_tokens:,} tokens")
     print(f"optimizer steps: {max_steps:,}")
-
     print(f"loading {args.model}")
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model,
-        trust_remote_code=True,
-    )
-
-    raw_model = AutoModelForCausalLM.from_pretrained(
-        args.model,
-        trust_remote_code=True,
-        dtype=torch.float32,
-    ).to(device)
-
+    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True,)
+    raw_model = AutoModelForCausalLM.from_pretrained(args.model, trust_remote_code=True, dtype=torch.float32,).to(device)
     raw_model.train()
-
     print(f"parameters: {raw_model.num_parameters():,}")
-
-    muon, adamw = make_optimizers(
-        raw_model,
-        args.muon_lr,
-        args.adamw_lr,
-        args.weight_decay,
-    )
-
+    muon, adamw = make_optimizers(raw_model, args.muon_lr, args.adamw_lr, args.weight_decay,)
     train_model = raw_model
 
     if not args.no_compile:
@@ -348,7 +251,6 @@ def main():
         print("torch.compile enabled")
 
     os.makedirs(args.out, exist_ok=True)
-
     log_path = os.path.join(args.out, "train.log")
 
     with open(log_path, "w") as f:
@@ -362,7 +264,6 @@ def main():
         )
 
     cumulative_tokens = 0
-
     for step in range(max_steps):
         t0 = time.time()
 
@@ -374,27 +275,17 @@ def main():
 
         for micro_step in range(grad_accum_steps):
             x, labels = train_loader.next_batch()
-
             x = x.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
-
             valid_labels = (labels != -100).sum().item()
-
             if valid_labels == 0:
                 continue
 
-            with torch.autocast(
-                device_type="cuda",
-                dtype=torch.bfloat16,
-            ):
-                out = train_model(
-                    input_ids=x,
-                    labels=labels,
-                )
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16,):
+                out = train_model(input_ids=x, labels=labels,)
 
                 if not torch.isfinite(out.loss):
                     logits_finite = torch.isfinite(out.logits).all().item()
-
                     print("\nNON-FINITE LOSS")
                     print(f"step: {step + 1}")
                     print(f"micro-step: {micro_step + 1}/{grad_accum_steps}")
@@ -402,7 +293,6 @@ def main():
                     print(f"input range: {x.min().item()}..{x.max().item()}")
                     print(f"logits finite: {logits_finite}")
                     print(f"loss: {out.loss.item()}")
-
                     raise RuntimeError("Non-finite training loss")
 
                 loss = out.loss / grad_accum_steps
@@ -411,33 +301,14 @@ def main():
             loss.backward()
             completed_micro_steps += 1
 
-        norm = torch.nn.utils.clip_grad_norm_(
-            raw_model.parameters(),
-            args.grad_clip,
-        )
-
+        norm = torch.nn.utils.clip_grad_norm_(raw_model.parameters(), args.grad_clip,)
         if not torch.isfinite(norm):
             raise RuntimeError(
                 f"Non-finite gradient norm at step {step + 1}: {norm.item()}"
             )
 
-        adamw_lr = get_lr(
-            step,
-            max_steps,
-            args.adamw_lr,
-            args.warmup_fraction,
-            args.decay_fraction,
-            args.min_lr_ratio,
-        )
-
-        muon_lr = get_lr(
-            step,
-            max_steps,
-            args.muon_lr,
-            args.warmup_fraction,
-            args.decay_fraction,
-            args.min_lr_ratio,
-        )
+        adamw_lr = get_lr(step, max_steps, args.adamw_lr, args.warmup_fraction, args.decay_fraction, args.min_lr_ratio,)
+        muon_lr = get_lr(step, max_steps, args.muon_lr, args.warmup_fraction, args.decay_fraction, args.min_lr_ratio,)
 
         for group in adamw.param_groups:
             group["lr"] = adamw_lr
@@ -448,16 +319,10 @@ def main():
         adamw.step()
         muon.step()
 
-        cumulative_tokens = min(
-            (step + 1) * args.batch_tokens,
-            target_tokens,
-        )
-
+        cumulative_tokens = min((step + 1) * args.batch_tokens, target_tokens,)
         epoch = cumulative_tokens / train_loader.total_tokens
         shard_progress = train_loader.shard_progress
-
         torch.cuda.synchronize()
-
         dt = time.time() - t0
         tokens_per_sec = args.batch_tokens / dt
         vram = torch.cuda.max_memory_allocated() / 1e9
@@ -484,13 +349,7 @@ def main():
             f.write(log_line + "\n")
 
         if (step + 1) % args.val_every == 0 or step + 1 == max_steps:
-            val_loss = validate(
-                raw_model,
-                val_loader,
-                args.val_steps,
-                device,
-            )
-
+            val_loss = validate(raw_model, val_loader, args.val_steps, device,)
             val_line = (
                 f"step {step + 1:6d}/{max_steps:<6d} | "
                 f"val_loss {val_loss:.6f} | "
@@ -503,32 +362,14 @@ def main():
                 f.write(val_line + "\n")
 
         if (step + 1) % args.save_every == 0:
-            checkpoint_dir = os.path.join(
-                args.out,
-                f"step_{step + 1:06d}",
-            )
+            checkpoint_dir = os.path.join(args.out, f"step_{step + 1:06d}",)
 
-            save_checkpoint(
-                raw_model,
-                tokenizer,
-                checkpoint_dir,
-                args.model,
-                step + 1,
-                cumulative_tokens,
-            )
-
+            save_checkpoint(raw_model, tokenizer, checkpoint_dir, args.model, step + 1, cumulative_tokens,)
             print(f"saved {checkpoint_dir}")
 
     final_dir = os.path.join(args.out, "final")
 
-    save_checkpoint(
-        raw_model,
-        tokenizer,
-        final_dir,
-        args.model,
-        max_steps,
-        cumulative_tokens,
-    )
+    save_checkpoint(raw_model, tokenizer, final_dir, args.model, max_steps, cumulative_tokens,)
 
     training_info = {
         "base_model": args.model,
@@ -549,10 +390,7 @@ def main():
         "tokens_trained": cumulative_tokens,
     }
 
-    with open(
-        os.path.join(final_dir, "sft_config.json"),
-        "w",
-    ) as f:
+    with open(os.path.join(final_dir, "sft_config.json"), "w",) as f:
         json.dump(training_info, f, indent=2)
 
     print(f"training complete: {final_dir}")
